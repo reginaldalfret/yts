@@ -108,6 +108,8 @@ export declare interface H5vcc {
     userOnExitStrategy?: ExitStrategy;
     /** Exit Cobalt using the specified exit strategy on the platform. */
     exit?: () => void;
+    /** Hides the Cobalt splash screen once the web application is ready. */
+    hideSplashScreen?: () => boolean;
     /** Returns screen diagonal value in inches. */
     getScreenDiagonal?: () => Promise<number>;
     /** Returns the user's TV friendly name. */

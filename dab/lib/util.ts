@@ -269,7 +269,10 @@ function checkParameterType(
   isArray?: boolean,
 ) {
   if (isArray) {
-    return Array.isArray(parameter) && typeof parameter[0] === type;
+    return (
+      Array.isArray(parameter) &&
+      parameter.every((item) => typeof item === type)
+    );
   } else {
     return typeof parameter === type;
   }

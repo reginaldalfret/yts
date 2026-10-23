@@ -207,6 +207,19 @@ describe('MqttClient', () => {
     expect(response).toEqual(expectedResponse);
   });
 
+  it('should end the subscription when the response beats subscribe', async () => {
+    const topic = 'test';
+    const expectedResponse = {status: 200, topic};
+
+    // Emitted synchronously, before subscribe() has resolved.
+    const promise = client.subscribeOnce(topic);
+    client.emitter.emit(topic, expectedResponse, {});
+
+    expect(await promise).toEqual(expectedResponse);
+    await new Promise((resolve) => void setTimeout(resolve, 0));
+    expect(client.emitter.listeners(topic).length).toBe(0);
+  });
+
   it('should reject with an Error when status is greater than 299', async () => {
     const topic = 'test';
     const errorPayload = {status: 500, error: 'Internal error'};

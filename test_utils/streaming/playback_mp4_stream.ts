@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-import {isAndroidTv} from 'google3/third_party/javascript/yts/test_utils/cobalt';
+import {getMimeTypeWithTunnelMode} from 'google3/third_party/javascript/yts/test_utils/playback_util';
 import type {PlaybackOptions, StreamInfo} from 'google3/third_party/javascript/yts/test_utils/streams/interfaces';
 import {objectUrlFromSafeSource, unwrapUrl} from 'safevalues';
 
@@ -96,15 +96,8 @@ export function streamVideoByChunksV2(
 
             for (const videoInfo of videoInfos) {
               if (!videoInfo) continue;
-              let mimetype = videoInfo.mimetype;
-              const disableTunnel =
-                  window.location.search.includes('disable_tunnel=true') ||
-                  Boolean(options?.disableTunnel);
-              if (isAndroidTv() && !disableTunnel &&
-                  Boolean(MediaSource?.isTypeSupported?.(mimetype + ';tunnelmode=true'))) {
-                mimetype += ';tunnelmode=true';
-                console.log('Upgrading video stream to tunnel mode:', mimetype);
-              }
+              const mimetype =
+                  getMimeTypeWithTunnelMode(videoInfo.mimetype, options);
               const videoSb = mediaSource.addSourceBuffer(mimetype);
               videoSbs.push(videoSb);
               const videoHandler = new HandlerClass(

@@ -35,6 +35,11 @@ export interface Ports {
  */
 export type FailureCode =
     // go/keep-sorted start block=yes sticky_prefixes=/*,*
+    /**
+     * The device does not support a capability required for this test (e.g.
+     * user selected "Not supported"). Only used during guided tests.
+     */
+    |'capability.not_supported'
     /** An API errored out (e.g. the Gemini API) */
     |'infra.api_failure'
     /** There was an issue communicating with the device */
@@ -127,3 +132,42 @@ export type FailureCode =
      */
     |'voice.no_deeplink.voice_edu_overlay';
 // go/keep-sorted end
+
+/**
+ * All standardized FailureCodes available at runtime.
+ */
+export const FAILURE_CODES = [
+  // go/keep-sorted start
+  'capability.not_supported',
+  'infra.api_failure',
+  'infra.launch_failure',
+  'infra.unknown',
+  'voice.heavily_modified_vq',
+  'voice.invalid_other_params',
+  'voice.invalid_va',
+  'voice.lightly_modified_vq',
+  'voice.no_deeplink.assistant_clarification',
+  'voice.no_deeplink.assistant_failure',
+  'voice.no_deeplink.bad_response',
+  'voice.no_deeplink.disambig',
+  'voice.no_deeplink.llm_answer',
+  'voice.no_deeplink.no_launch',
+  'voice.no_deeplink.no_response',
+  'voice.no_deeplink.settings_overlay',
+  'voice.no_deeplink.unknown_error',
+  'voice.no_deeplink.voice_edu_overlay',
+  // go/keep-sorted end
+] as const;
+
+/**
+ * Compile-time assertion helper that ensures type `T` is `never`.
+ */
+export type EnsureExhaustive<T extends never> = T;
+
+/**
+ * Compile-time check verifying that every member of the `FailureCode` union is
+ * present in the `FAILURE_CODES` runtime array.
+ */
+export type AssertAllFailureCodesInArray = EnsureExhaustive<
+  Exclude<FailureCode, (typeof FAILURE_CODES)[number]>
+>;

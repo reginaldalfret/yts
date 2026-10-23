@@ -94,7 +94,7 @@ export async function scanAndConnect(
   if (await exports.isPortOpen(ip, 5555)) {
     console.log(`[${ip}] 5555 open. Attempting ADB connect...`);
     try {
-      shell.runAdbCommand(`connect ${ip}`);
+      shell.runAdbCommand(['connect', ip]);
     } catch (e: unknown) {
       console.error(`Failed to connect to ADB on ${ip}:`, e);
     }

@@ -119,6 +119,11 @@ describe('Util', () => {
       {name: 'prop2', type: 'object'},
     ]);
 
+    // Request with empty array parameters that passes validation.
+    util.validateRequest({'prop1': []}, [
+      {name: 'prop1', type: 'string', isArray: true},
+    ]);
+
     // Request with required parameters that passes validation.
     util.validateRequest({'prop1': 'val1', 'prop2': 2, 'prop3': false}, [
       {name: 'prop1', type: 'string', required: true},
@@ -145,6 +150,28 @@ describe('Util', () => {
       util.validateRequest({'prop1': [1, 2, 3], 'prop2': {key1: 'val1'}}, [
         {name: 'prop1', type: 'string', isArray: true},
         {name: 'prop2', type: 'object'},
+      ]);
+    } catch (e: unknown) {
+      isError = true;
+    }
+    expect(isError).toBeTrue();
+
+    // Request with array having an invalid element type that fails validation.
+    isError = false;
+    try {
+      util.validateRequest({'prop1': ['valid', 123]}, [
+        {name: 'prop1', type: 'string', isArray: true},
+      ]);
+    } catch (e: unknown) {
+      isError = true;
+    }
+    expect(isError).toBeTrue();
+
+    // Request with non-array passed for isArray parameter.
+    isError = false;
+    try {
+      util.validateRequest({'prop1': 'not-an-array'}, [
+        {name: 'prop1', type: 'string', isArray: true},
       ]);
     } catch (e: unknown) {
       isError = true;

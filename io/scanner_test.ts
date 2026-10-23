@@ -75,8 +75,11 @@ describe('scanner', () => {
       const foundBrokers: string[] = [];
       await scanner.scanAllNetworks(foundBrokers, 1);
 
-      expect(runAdbCommandSpy).toHaveBeenCalledWith('connect 192.168.1.1');
-      expect(runAdbCommandSpy).not.toHaveBeenCalledWith('connect 192.168.1.2');
+      expect(runAdbCommandSpy).toHaveBeenCalledWith(['connect', '192.168.1.1']);
+      expect(runAdbCommandSpy).not.toHaveBeenCalledWith([
+        'connect',
+        '192.168.1.2',
+      ]);
     });
   });
 

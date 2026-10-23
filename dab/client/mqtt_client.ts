@@ -302,7 +302,11 @@ export class MqttClient {
           ),
         );
       }, timeoutMs);
-      const sub = await this.subscribe(topic, async (msg, pkg) => {
+      // The response can arrive before subscribe() resolves, so `sub` may
+      // still be unset when the listener first runs.
+      let sub: Subscriber | undefined;
+      let received = false;
+      sub = await this.subscribe(topic, async (msg, pkg) => {
         // Checks for the correct Correlation Data.
         if (
           correlationID.length !== 0 &&
@@ -311,9 +315,11 @@ export class MqttClient {
           // Wait for the next one if Correlation ID doesn't match.
           // This is currently broken on RDK, disabling this for now.
         }
-        if (sub) {
-          await sub.end();
+        if (received) {
+          return;
         }
+        received = true;
+        await sub?.end();
         clearTimeout(timer);
         if (!alwaysReturnResponse && msg.status > 299) {
           const error = createDabError(msg);
@@ -324,6 +330,10 @@ export class MqttClient {
           resolve(msg);
         }
       });
+      if (received) {
+        // The response arrived before subscribe() resolved; clean up now.
+        await sub.end();
+      }
       await publish;
     });
   }

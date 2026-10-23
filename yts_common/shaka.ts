@@ -15,6 +15,11 @@
  * limitations under the License.
  */
 
+/**
+ * @fileoverview Loader, interfaces, and compatibility polyfills for the Shaka
+ * Player library.
+ */
+
 import {trustedResourceUrl} from 'safevalues';
 
 import {loadScript} from './load_resource';
@@ -75,26 +80,61 @@ export interface NetworkingEngine {
       filter: (type: number, request: Request) => Promise<void>| void): void;
 }
 
+interface MockTextTrackList {
+  length: number;
+  [index: number]: TextTrack;
+  addEventListener(
+      type: string, listener: (event: Event) => void,
+      options?: boolean | AddEventListenerOptions): void;
+  removeEventListener(
+      type: string, listener: (event: Event) => void,
+      options?: boolean | EventListenerOptions): void;
+}
+
+/**
+ * Creates a mock TextTrackList with no-op event listeners and zero length.
+ */
+function createMockTextTrackList(): TextTrackList {
+  const list: unknown[] = [];
+  const mockList = list as unknown as MockTextTrackList;
+  mockList.addEventListener = () => {};
+  mockList.removeEventListener = () => {};
+  return mockList as unknown as TextTrackList;
+}
+
 interface MockableHTMLMediaElement {
-  textTracks: TextTrack[];
+  textTracks: TextTrackList;
   addTextTrack(): TextTrack;
 }
 
 /**
- * Mocks text tracks to prevent Shaka player constructor crashes.
+ * Mocks text tracks to prevent Shaka player constructor and destructor crashes.
  *
  * @param video The HTMLMediaElement to attach the mocked text tracks to.
  */
 function mockTextTracks(video: HTMLMediaElement) {
-  const mockableVideo = video as unknown as MockableHTMLMediaElement;
+  const tracks = createMockTextTrackList();
   try {
-    mockableVideo.textTracks = [];
+    Object.defineProperty(video, 'textTracks', {
+      value: tracks,
+      writable: true,
+      configurable: true,
+    });
   } catch (e) {
     // Ignore read-only assignment error.
+  }
+  const mockableVideo = video as unknown as MockableHTMLMediaElement;
+  if (!mockableVideo.textTracks) {
+    try {
+      mockableVideo.textTracks = tracks;
+    } catch (e) {
+      // Ignore assignment error.
+    }
   }
   mockableVideo.addTextTrack = () => {
     return {
       addCue: () => {},
+      removeCue: () => {},
     } as unknown as TextTrack;
   };
 }

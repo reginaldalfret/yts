@@ -24,6 +24,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import {cliContext} from './cli_context';
+
 class Storage {
   write(pathName: string, data: string) {
     pathName = this.getFullDataDirPath(pathName);
@@ -80,9 +82,7 @@ class Storage {
           dir = `${home}/Library/Preferences`; // Mac
         } else {
           // This is the path where the YTS credentials are deployed on YTLR lab servers.
-          // LINT.IfChange(yts_credentials_path)
           dir = `${home}/.local/share`; // Linux
-          // LINT.ThenChange(//depot/google3/devtools/deviceinfra/service/release/config/mobileharness/ytlr_lab_server_credential.gcl:yts_credentials_path)
         }
       } else {
         const tmp = process.env['TEST_TMPDIR']; // some MH setups
@@ -93,7 +93,7 @@ class Storage {
         }
       }
     }
-    return path.join(dir, 'yts_server');
+    return path.join(dir, cliContext.storageDir);
   }
 }
 

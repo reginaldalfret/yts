@@ -36,6 +36,22 @@ export async function deviceUnderTest(): Promise<Device> {
 }
 
 /**
+ * When called from within a test module, converts the given device (or the
+ * current device under test if omitted) to a DIAL connection if it is not
+ * already DIAL-like.
+ */
+export async function toDialDevice(
+    device?: Device|Promise<Device>,
+    ): Promise<Device> {
+  if (!testContext.dialDeviceConverter) {
+    throw new Error(
+        'DIAL device converter has not been initialized in the context.',
+    );
+  }
+  return testContext.dialDeviceConverter(device ?? deviceUnderTest());
+}
+
+/**
  * Returns the value of a test-specific flag.
  */
 export function getFlag(key: string): string|undefined {

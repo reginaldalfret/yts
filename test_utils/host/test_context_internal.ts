@@ -24,6 +24,7 @@ import {Device} from 'google3/third_party/javascript/yts/devices/interfaces';
  */
 export const testContext: {
   deviceResolver?: () => Promise<Device>;
+  dialDeviceConverter?: (device: Device|Promise<Device>) => Promise<Device>;
   flags?: Map<string, string>;
   agentUrl?: string;
   defaultApp?: string;

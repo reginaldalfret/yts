@@ -20,6 +20,7 @@
  */
 
 // taze: Buffer from //third_party/javascript/typings/node
+import {VideoInputSource, VoiceSystem} from 'google3/third_party/javascript/yts/dab/proto/dab_service.jsonpb_decls';
 
 /**
  * Represents solely the class properties of a generic device. Use when parsing
@@ -264,6 +265,83 @@ export interface Device extends AgentLaunchTarget, DeviceProperties {
 
   /** Destroys the device connection. */
   destroy(): Promise<void>;
+}
+
+/**
+ * Represents serializable properties of a DIAL device.
+ */
+export interface DialDeviceProperties extends DeviceProperties {
+  location: string;
+  appUrl: string;
+}
+
+/**
+ * Represents the App Status.
+ */
+export interface DialAppStatusXml {
+  service: {
+    name: string[]; options: Array<{$?: {allowStop?: boolean}}>;
+    state?: string[];
+    link?: Array<{$?: {rel?: string; href?: string}}>;
+    additionalData?: Array<{[name: string]: string[]}>;
+  };
+}
+
+/**
+ * Defines the public interface for a DIAL device.
+ */
+export interface DialDevice extends Device, DialDeviceProperties {
+  stopUrl(app: string): Promise<string>;
+  resourceUrl(app?: string): string;
+  appStatus(app: string, clientDialVer?: string): Promise<DialAppStatusXml>;
+  checkYouTubeApp(): Promise<boolean>;
+  href(status: DialAppStatusXml): string;
+}
+
+/**
+ * Returns true if the given device is a DIAL device.
+ */
+export function isDialDevice(device: Device): device is DialDevice {
+  return device.deviceType === 'dial';
+}
+
+/**
+ * Represents serializable properties of a DAB device.
+ */
+export interface DabDeviceProperties extends DeviceProperties {
+  deviceId: string;
+  brokerUrl: string;
+}
+
+/**
+ * Defines the public interface for a DAB device.
+ */
+export interface DabDevice extends Device, DabDeviceProperties {
+  init(): Promise<void>;
+  getDeviceID(): string;
+  getState(
+      app?: string,
+      ): Promise<'FOREGROUND'|'BACKGROUND'|'STOPPED'|undefined>;
+  version(): Promise<string[]>;
+  listSupportedKeys(): Promise<string[]>;
+  sendKeyLong(keyCode: string, durationMs?: number): Promise<void>;
+  listSupportedLanguages(): Promise<string[]>;
+  setLanguage(language: string): Promise<void>;
+  getPersonalizedAds(): Promise<boolean>;
+  setPersonalizedAds(personalizedAds: boolean): Promise<void>;
+  getTextToSpeech(): Promise<boolean>;
+  getTextToSpeechSupport(): Promise<boolean>;
+  setTextToSpeech(textToSpeech: boolean): Promise<void>;
+  getVideoInputSource(): Promise<VideoInputSource>;
+  setVideoInputSource(source: VideoInputSource): Promise<void>;
+  listSupportedVoiceSystems(): Promise<VoiceSystem[]>;
+}
+
+/**
+ * Returns true if the given device is a DAB device.
+ */
+export function isDabDevice(device: Device): device is DabDevice {
+  return device.deviceType === 'dab';
 }
 
 /**

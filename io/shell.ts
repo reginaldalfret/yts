@@ -15,7 +15,26 @@
  * limitations under the License.
  */
 
-import {execSync} from 'child_process';
+/**
+ * @fileoverview Wrapper around child_process for shell and ADB execution.
+ */
+
+import {execFileSync, execSync} from 'child_process';
+
+/** Options for executing shell commands. */
+export interface ShellOptions {
+  /** Maximum buffer size in bytes for stdout/stderr. */
+  maxBuffer?: number;
+  /** Timeout in milliseconds before terminating the process. */
+  timeout?: number;
+}
+
+/** Type alias for either a numeric timeout in ms or full ShellOptions. */
+export type ShellOptionsOrTimeout = number | ShellOptions;
+
+/** Default timeout for shell and ADB commands (10 seconds). */
+const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_MAX_BUFFER_BYTES = 200 * 1024 * 1024;
 
 /**
  * A class defining a shell, meant as a wrapper around child_process/execSync.
@@ -31,7 +50,10 @@ class Shell {
       return false;
     }
     try {
-      execSync(`${this.adbPath} --version`, {stdio: 'ignore'});
+      execFileSync(this.adbPath, ['--version'], {
+        stdio: 'ignore',
+        timeout: 5000,
+      });
       return true;
     } catch {
       return false;
@@ -40,40 +62,64 @@ class Shell {
 
   /**
    * Runs an ADB command and returns the result as a string.
-   * @param adbCommand The ADB command to run.
+   * @param adbArgs The ADB command arguments to run.
+   * @param options Optional timeout in milliseconds or ShellOptions.
    * @return The result of the command.
    */
-  runAdbCommand(adbCommand: string): string {
-    return this.runAdbCommandBin(adbCommand).toString();
+  runAdbCommand(
+    adbArgs: string[],
+    options?: ShellOptionsOrTimeout,
+  ): string {
+    return this.runAdbCommandBin(adbArgs, options).toString();
   }
 
   /**
    * Runs an ADB command and returns the result as a buffer.
-   * @param adbCommand The ADB command to run.
+   * @param adbArgs The ADB command arguments to run.
+   * @param options Optional timeout in milliseconds or ShellOptions.
    * @return The result of the command.
    */
-  runAdbCommandBin(adbCommand: string): Buffer {
-    return this.execSyncBin(`${this.adbPath} ${adbCommand}`);
+  runAdbCommandBin(
+    adbArgs: string[],
+    options?: ShellOptionsOrTimeout,
+  ): Buffer {
+    const {maxBuffer, timeout} = parseOptions(options);
+    const adbPath = this.adbPath ?? 'adb';
+    console.debug(`${adbPath} ${adbArgs.join(' ')}`);
+    try {
+      const result = execFileSync(adbPath, adbArgs, {maxBuffer, timeout});
+      console.debug(`Result size: ${result.length}`);
+      return result;
+    } catch (e: unknown) {
+      console.error(e);
+      throw e;
+    }
   }
 
   /**
    * Runs a shell command and returns the result as a string.
    * @param command The command to run.
+   * @param options Optional timeout in milliseconds or ShellOptions.
    * @return The result of the command.
    */
-  execSync(command: string): string {
-    return this.execSyncBin(command).toString();
+  execSync(command: string, options?: ShellOptionsOrTimeout): string {
+    return this.execSyncBin(command, options).toString();
   }
 
   /**
    * Runs a shell command and returns the result as a buffer.
    * @param command The command to run.
+   * @param options Optional timeout in milliseconds or ShellOptions.
    * @return The result of the command.
    */
-  execSyncBin(command: string): Buffer {
+  execSyncBin(
+    command: string,
+    options?: ShellOptionsOrTimeout,
+  ): Buffer {
+    const {maxBuffer, timeout} = parseOptions(options);
     console.debug(command);
     try {
-      const result = execSync(command, {maxBuffer: 200 * 1024 * 1024});
+      const result = execSync(command, {maxBuffer, timeout});
       console.debug(`Result size: ${result.length}`);
       return result;
     } catch (e: unknown) {
@@ -90,3 +136,22 @@ export const shell = new Shell();
 export const TEST_ONLY = {Shell};
 
 export type {Shell};
+
+/**
+ * Normalizes options or numeric timeout into maxBuffer and timeout.
+ */
+function parseOptions(options?: ShellOptionsOrTimeout): {
+  maxBuffer: number;
+  timeout: number;
+} {
+  if (typeof options === 'number') {
+    return {
+      maxBuffer: DEFAULT_MAX_BUFFER_BYTES,
+      timeout: options,
+    };
+  }
+  return {
+    maxBuffer: options?.maxBuffer ?? DEFAULT_MAX_BUFFER_BYTES,
+    timeout: options?.timeout ?? DEFAULT_TIMEOUT_MS,
+  };
+}

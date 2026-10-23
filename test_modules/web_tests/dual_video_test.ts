@@ -189,7 +189,9 @@ describe('Functional Tests', () => {
         }
       });
 
-      primaryVideo.src = createMediaSourceUrl(contentInfo);
+      primaryVideo.src = createMediaSourceUrl(contentInfo, {
+        disableTunnel: true,
+      });
       primaryVideo.autoplay = true;
       await primaryVideo.play();
     }
@@ -280,7 +282,7 @@ describe('Functional Tests', () => {
               mimetype: 'video/mp4; codecs="avc1.640028, mp4a.40.2"',
               src: 'https://storage.googleapis.com/ytlr-cert.appspot.com/test-materials/media/manual/dual_video/secondary-video-fragmented.mp4',
             },
-          ]);
+          ], {disableTunnel: true});
           secondaryVideo.load();
           await secondaryVideo.play();
         }

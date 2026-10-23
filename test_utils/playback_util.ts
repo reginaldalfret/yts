@@ -20,6 +20,7 @@ import {CobaltVideoElement} from 'google3/third_party/javascript/yts/test_utils/
 import * as av1Codec from 'google3/third_party/javascript/yts/test_utils/codecs/av1_codec';
 import * as vp9Codec from 'google3/third_party/javascript/yts/test_utils/codecs/vp9_codec';
 import {appendContentToBuffer} from 'google3/third_party/javascript/yts/test_utils/streaming/stream_utils';
+import type {StreamDef} from 'google3/third_party/javascript/yts/test_utils/streams/interfaces';
 import {h5vcc} from 'google3/third_party/javascript/yts/yts_common/h5vcc';
 import {objectUrlFromSafeSource, unwrapUrl} from 'safevalues';
 
@@ -103,6 +104,17 @@ export interface PlaybackOptions {
 }
 
 /**
+ * Determines whether tunnel mode is disabled either via URL query parameters
+ * or via explicit PlaybackOptions.
+ */
+export function isTunnelModeDisabled(options?: PlaybackOptions): boolean {
+  return (
+      window.location.search.includes('disable_tunnel=true') ||
+      window.location.search.includes('disable_tunnel=1') ||
+      Boolean(options?.disableTunnel));
+}
+
+/**
  * Returns the MIME type with ';tunnelmode=true' appended if running on Android TV
  * and tunnel mode is supported by the device and not explicitly disabled.
  */
@@ -113,9 +125,7 @@ export function getMimeTypeWithTunnelMode(
   if (!mimetype.startsWith('video/')) {
     return mimetype;
   }
-  const disableTunnel =
-      window.location.search.includes('disable_tunnel=true') ||
-      Boolean(options?.disableTunnel);
+  const disableTunnel = isTunnelModeDisabled(options);
   if (isAndroidTv() && !disableTunnel &&
       Boolean(MediaSource?.isTypeSupported?.(mimetype + ';tunnelmode=true'))) {
     const tunnelMimeType = mimetype + ';tunnelmode=true';
@@ -123,6 +133,112 @@ export function getMimeTypeWithTunnelMode(
     return tunnelMimeType;
   }
   return mimetype;
+}
+
+/** Decoder capability dimensions to declare for a video stream. */
+export interface VideoCapabilities {
+  width: number;
+  height: number;
+  fps: number;
+}
+
+/**
+ * Resolves the decoder capability dimensions to declare for a stream.
+ *
+ * Sizing this correctly matters on Android, where `MediaCodec` allocates
+ * surface buffers based on the declared height. Declaring a landscape
+ * 1280x720 for a portrait 720x1280 stream overflows the buffer and crashes
+ * the native decoder, so portrait (Shorts) streams must be reported as 9:16.
+ *
+ * Portrait and landscape resolution tags do not overlap, so a single lookup
+ * serves both orientations; only the fallback depends on the orientation.
+ *
+ * @param stream Stream whose capabilities should be resolved.
+ * @param isShorts Forces portrait handling for streams whose source path is
+ *     not self-describing.
+ */
+export function getVideoCapabilities(
+    stream: StreamDef,
+    isShorts?: boolean,
+    ): VideoCapabilities {
+  const isPortrait = Boolean(isShorts || stream.src?.includes('shorts'));
+  let width = stream.get('width') as number | undefined;
+  let height = stream.get('height') as number | undefined;
+
+  if (!width || !height) {
+    switch ((stream.get('resolution') as string) || '') {
+      // Portrait (9:16) tags, named for the vertical long edge.
+      case '1920p':
+        width = 1080;
+        height = 1920;
+        break;
+      case '1280p':
+        width = 720;
+        height = 1280;
+        break;
+      case '854p':
+        width = 480;
+        height = 854;
+        break;
+      case '640p':
+        width = 360;
+        height = 640;
+        break;
+      case '426p':
+        width = 240;
+        height = 426;
+        break;
+      case '256p':
+        width = 144;
+        height = 256;
+        break;
+      // Landscape (16:9) tags, named for the vertical short edge.
+      case '2160p':
+        width = 3840;
+        height = 2160;
+        break;
+      case '1440p':
+        width = 2560;
+        height = 1440;
+        break;
+      case '1080p':
+        width = 1920;
+        height = 1080;
+        break;
+      case '720p':
+        width = 1280;
+        height = 720;
+        break;
+      case '480p':
+        width = 854;
+        height = 480;
+        break;
+      case '360p':
+        width = 640;
+        height = 360;
+        break;
+      case '240p':
+        width = 426;
+        height = 240;
+        break;
+      case '144p':
+        width = 256;
+        height = 144;
+        break;
+      default:
+        width = isPortrait ? 720 : 1280;
+        height = isPortrait ? 1280 : 720;
+        break;
+    }
+  }
+
+  // Shorts stay portrait regardless of how the stream declared itself, so
+  // correct dimensions that arrived (or resolved) in landscape orientation.
+  if (isPortrait && width > height) {
+    [width, height] = [height, width];
+  }
+
+  return {width, height, fps: (stream.get('fps') as number) || 30};
 }
 
 /**

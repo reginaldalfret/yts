@@ -16,30 +16,252 @@
  */
 
 import {CobaltVideoElement} from 'google3/third_party/javascript/yts/test_utils/cobalt_video_element';
+import {
+  AV1_LICENSE_URL,
+  CONCURRENT_2027_CONFIG,
+  DrmMode,
+  ERROR_MARGIN_PERCENT,
+  H264_LICENSE_URL,
+  LICENSE_DELAY_MS,
+  MEASUREMENT_THRESHOLD,
+  PRE_MEASUREMENT_THRESHOLD,
+  PRIMARY_DRM_VIDEO_START_TIME,
+  SECONDARY_DRM_VIDEO_START_TIME,
+  TEST_DONE_THRESHOLD,
+  TEST_TIMEOUT,
+  VIDEO_TIMEOUT_THRESHOLD,
+  VideoCodecType,
+  VideoElementSetup,
+  VideoStreamConfig,
+} from 'google3/third_party/javascript/yts/test_utils/dual_video/dual_drm_test_constants';
+import {
+  cleanUpDualVideoStyle,
+  cleanUpVideoAndContainer,
+  getLicenseServerUrl,
+  initializeDualVideoStyle,
+  monitorConcurrentPlayback,
+  setupVideoElement2027,
+} from 'google3/third_party/javascript/yts/test_utils/dual_video/dual_drm_video_helpers';
 import {requestIndividualization} from 'google3/third_party/javascript/yts/test_utils/eme/eme_utils';
 import * as util from 'google3/third_party/javascript/yts/test_utils/playback_util';
 import {createMediaSourceUrl} from 'google3/third_party/javascript/yts/test_utils/playback_util';
 import {StreamDef} from 'google3/third_party/javascript/yts/test_utils/streams/interfaces';
-import {AV1, VP9} from 'google3/third_party/javascript/yts/test_utils/streams/media_streams';
+import {
+  AV1,
+  H264,
+} from 'google3/third_party/javascript/yts/test_utils/streams/media_streams';
+
+/** Declarative specification for a 2027 Concurrent Playback test case. */
+interface DualVideoTestCase2027 {
+  readonly id: string;
+  readonly title: string;
+  readonly primary: VideoStreamConfig;
+  readonly secondary: VideoStreamConfig;
+}
+
+/**
+ * Returns the 2027 Concurrent Playback test cases, evaluating dynamic codec
+ * and DRM tier fallbacks at registration time.
+ */
+function getDualVideo2027TestCases(): readonly DualVideoTestCase2027[] {
+  const defaultCodec: VideoCodecType = util.supportsAV1() ? 'av1' : 'vp9';
+  const isHighRes =
+    util.isGreaterThan4K() ||
+    util.isGreaterThan8K() ||
+    util.isGreaterThanFHDAndSmallerThanOrEqualTo4K();
+  const defaultSecondaryDrm: DrmMode = isHighRes ? 'hw' : 'sw';
+
+  return [
+    {
+      id: '5F139C7F-C7DE-4920-AEC3-92F812F0994C',
+      title: 'Dual Drm Video Test 2027',
+      primary: {codec: defaultCodec, drm: 'hw'},
+      secondary: {codec: defaultCodec, drm: defaultSecondaryDrm},
+    },
+    {
+      id: '8D1F6E2B-9C3A-4E57-B2A1-F4E8D7C6B5A0',
+      title: 'Dual Video Test AV1 HW DRM + AV1 HW DRM 2027',
+      primary: {codec: 'av1', drm: 'hw'},
+      secondary: {codec: 'av1', drm: 'hw'},
+    },
+    {
+      id: '7B2E5C3D-8A4F-4B19-A3D2-E6F7C8B9A0B1',
+      title: 'Dual Video Test AV1 HW DRM + VP9 HW DRM 2027',
+      primary: {codec: 'av1', drm: 'hw'},
+      secondary: {codec: 'vp9', drm: 'hw'},
+    },
+    {
+      id: '8D099101-98A7-421D-85D3-B016207E5D5F',
+      title: 'Dual Video Test VP9 HW DRM + AV1 HW DRM 2027',
+      primary: {codec: 'vp9', drm: 'hw'},
+      secondary: {codec: 'av1', drm: 'hw'},
+    },
+    {
+      id: '6C3D4B5A-7E8F-4A20-9B1C-D5E6F7A8B9C2',
+      title: 'Dual Video Test AV1 HW DRM + VP9 SW DRM 2027',
+      primary: {codec: 'av1', drm: 'hw'},
+      secondary: {codec: 'vp9', drm: 'sw'},
+    },
+    {
+      id: '5A4B3C2D-6F7E-4931-8A2B-C4D5E6F7A8B3',
+      title: 'Dual Video Test AV1 HW DRM + H.264 Clear 2027',
+      primary: {codec: 'av1', drm: 'hw'},
+      secondary: {codec: 'h264', drm: 'clear'},
+    },
+    {
+      id: '4F3E2D1C-5A6B-4822-9F1E-B3C4D5E6F7A4',
+      title: 'Dual Video Test VP9 HW DRM + VP9 HW DRM 2027',
+      primary: {codec: 'vp9', drm: 'hw'},
+      secondary: {codec: 'vp9', drm: 'hw'},
+    },
+    {
+      id: '3E2D1C5B-4A7F-4713-8E2D-A2B3C4D5E6F5',
+      title: 'Dual Video Test H.264 Clear + H.264 Clear 2027',
+      primary: {codec: 'h264', drm: 'clear'},
+      secondary: {codec: 'h264', drm: 'clear'},
+    },
+    {
+      id: '8A1B2C3D-4111-4E57-8A2B-C4D5E6F7A8B0',
+      title: 'Dual Video Test H.264 Clear + AV1 HW DRM 2027',
+      primary: {codec: 'h264', drm: 'clear'},
+      secondary: {codec: 'av1', drm: 'hw'},
+    },
+    {
+      id: '9B2C3D4E-5222-4E57-8A2B-C4D5E6F7A8B1',
+      title: 'Dual Video Test H.264 Clear + VP9 HW DRM 2027',
+      primary: {codec: 'h264', drm: 'clear'},
+      secondary: {codec: 'vp9', drm: 'hw'},
+    },
+    {
+      id: '1A2B3C4D-5E6F-4A1B-8C2D-3E4F5A6B7C8D',
+      title: 'Dual Video Test H.264 Clear Shorts + H.264 Clear Shorts 2027',
+      primary: {codec: 'h264', drm: 'clear', isShorts: true},
+      secondary: {codec: 'h264', drm: 'clear', isShorts: true},
+    },
+    {
+      id: '2B3C4D5E-6F7A-4B2C-9D3E-4F5A6B7C8D9E',
+      title: 'Dual Video Test VP9 Clear Shorts + VP9 Clear Shorts 2027',
+      primary: {codec: 'vp9', drm: 'clear', isShorts: true},
+      secondary: {codec: 'vp9', drm: 'clear', isShorts: true},
+    },
+    {
+      id: '3C4D5E6F-7A8B-4C3D-AE4F-5A6B7C8D9E0F',
+      title: 'Dual Video Test AV1 HW DRM + H.264 Clear Shorts 2027',
+      primary: {codec: 'av1', drm: 'hw'},
+      secondary: {codec: 'h264', drm: 'clear', isShorts: true},
+    },
+    {
+      id: '4D5E6F7A-8B9C-4D4E-BF5A-6B7C8D9E0F1A',
+      title: 'Dual Video Test AV1 HW DRM + VP9 Clear Shorts 2027',
+      primary: {codec: 'av1', drm: 'hw'},
+      secondary: {codec: 'vp9', drm: 'clear', isShorts: true},
+    },
+    {
+      id: '5E6F7A8B-9C0D-4E5F-C06B-7C8D9E0F1A2B',
+      title: 'Dual Video Test H.264 Clear Shorts + AV1 HW DRM 2027',
+      primary: {codec: 'h264', drm: 'clear', isShorts: true},
+      secondary: {codec: 'av1', drm: 'hw'},
+    },
+    {
+      id: '6F7A8B9C-0D1E-4F6A-D17C-8D9E0F1A2B3C',
+      title: 'Dual Video Test H.264 Clear Shorts + VP9 HW DRM 2027',
+      primary: {codec: 'h264', drm: 'clear', isShorts: true},
+      secondary: {codec: 'vp9', drm: 'hw'},
+    },
+  ];
+}
+
+/**
+ * Executes a 2027 Concurrent Playback test case with synchronized start,
+ * concurrent progression monitoring, and deterministic decoder teardown.
+ */
+async function runDualVideoTest2027(
+  primaryConfig: VideoStreamConfig,
+  secondaryConfig: VideoStreamConfig,
+): Promise<void> {
+  initializeDualVideoStyle();
+
+  let primarySetup: VideoElementSetup | undefined;
+  let secondarySetup: VideoElementSetup | undefined;
+
+  try {
+    console.log('Rendering dual videos (2027).');
+    [primarySetup, secondarySetup] = await Promise.all([
+      setupVideoElement2027('primary', primaryConfig),
+      setupVideoElement2027('secondary', secondaryConfig),
+    ]);
+
+    console.log('Waiting for both videos to buffer / reach ready state...');
+    let readyTimeoutId: ReturnType<typeof setTimeout> | undefined;
+    const readyTimeoutPromise = new Promise<void>((_, reject) => {
+      readyTimeoutId = setTimeout(
+        () =>
+          reject(
+            new Error(
+              'Timed out waiting for dual videos to buffer/reach ready state',
+            ),
+          ),
+        CONCURRENT_2027_CONFIG.bufferingTimeoutMs,
+      );
+    });
+
+    try {
+      await Promise.race([
+        Promise.all([primarySetup.readyPromise, secondarySetup.readyPromise]),
+        readyTimeoutPromise,
+      ]);
+    } finally {
+      clearTimeout(readyTimeoutId);
+    }
+    console.log(
+      'Both videos buffered and ready. Starting simultaneous playback.',
+    );
+
+    await Promise.all([
+      primarySetup.video.play(),
+      secondarySetup.video.play(),
+    ]);
+
+    await monitorConcurrentPlayback({
+      primaryVideoId: 'primary-video',
+      secondaryVideoId: 'secondary-video',
+      primaryStartThresholdSec:
+        CONCURRENT_2027_CONFIG.primaryStartTimeThresholdSec,
+      secondaryStartThresholdSec:
+        CONCURRENT_2027_CONFIG.secondaryStartTimeThresholdSec,
+      requiredConcurrentSec: CONCURRENT_2027_CONFIG.requiredConcurrentSec,
+      maxStallSec: CONCURRENT_2027_CONFIG.maxStallSec,
+      timeoutSec: CONCURRENT_2027_CONFIG.playbackTimeoutSec,
+    });
+  } finally {
+    for (const setup of [primarySetup, secondarySetup]) {
+      if (setup?.streamPromise) {
+        try {
+          setup.streamPromise.stop();
+          await setup.streamPromise.catch(() => {});
+        } catch {
+          // Ignore stream stop errors during teardown.
+        }
+      }
+      try {
+        setup?.video?.pause();
+      } catch {
+        // Ignore pause errors during teardown.
+      }
+      await setup?.cleanupDrm?.();
+    }
+    cleanUpVideoAndContainer('primary-video', 'primary-container');
+    cleanUpVideoAndContainer('secondary-video', 'secondary-container');
+    cleanUpDualVideoStyle();
+    // Give native hardware decoder contexts time to flush and release.
+    await util.sleep(
+      CONCURRENT_2027_CONFIG.decoderFlushDelaySec * util.SECOND,
+    );
+  }
+}
 
 describe('Functional Tests', () => {
   describe('Media', () => {
-    const AV1_LICENSE_URL =
-      'https://dash-mse-test.appspot.com/api/drm/widevine?drm_system=widevine&source=YOUTUBE&ip=0.0.0.0&ipbits=0&expire=19000000000&key=ik0&sparams=ip,ipbits,expire,drm_system,source,video_id&video_id=6508f99557a8385f&signature=5153900DAC410803EC269D252DAAA82BA6D8B825.495E631E406584A8EFCB4E9C9F3D45F6488B94E4';
-    const H264_LICENSE_URL =
-      'https://dash-mse-test.appspot.com/api/drm/widevine?drm_system=widevine&source=YOUTUBE&ip=0.0.0.0&ipbits=0&expire=19000000000&key=test_key1&sparams=ip,ipbits,expire,drm_system,source,video_id&video_id=03681262dc412c06&signature=9C4BE99E6F517B51FED1F0B3B31966D3C5DAB9D6.6A1F30BB35F3A39A4CA814B731450D4CBD198FFD';
-    const ERROR_MARGIN_PERCENT = 5;
-    const MEASUREMENT_THRESHOLD = 5;
-    const HDR_WARMUP_THRESHOLD = 10;
-    const PRE_MEASUREMENT_THRESHOLD = 1;
-    const PRIMARY_DRM_VIDEO_START_TIME = 5;
-    const SECONDARY_DRM_VIDEO_START_TIME = 10;
-    // Take 3 measurements before we're done (AV1 video isn't long enough for 4 measurements).
-    const TEST_DONE_THRESHOLD =
-      PRE_MEASUREMENT_THRESHOLD + 3 * MEASUREMENT_THRESHOLD;
-    const VIDEO_TIMEOUT_THRESHOLD = 30 + TEST_DONE_THRESHOLD;
-    const TEST_TIMEOUT = 60 + HDR_WARMUP_THRESHOLD + VIDEO_TIMEOUT_THRESHOLD;
-    const LICENSE_DELAY_MS = 10;
     let secondaryVideoStarted = false;
     let primaryVideoSnapshot: util.VideoTimeSnapshot;
     let secondaryVideoSnapshot: util.VideoTimeSnapshot;
@@ -54,10 +276,23 @@ describe('Functional Tests', () => {
         videoCurrentTime: 0,
         wallTime: 0,
       };
+      cleanUpDualVideoStyle();
+      cleanUpVideoAndContainer('primary-video', 'primary-container');
+      cleanUpVideoAndContainer('secondary-video', 'secondary-container');
     });
 
-    function initializeStyle() {
+    afterEach(() => {
+      cleanUpDualVideoStyle();
+      cleanUpVideoAndContainer('primary-video', 'primary-container');
+      cleanUpVideoAndContainer('secondary-video', 'secondary-container');
+    });
+
+    function initializeStyle(): void {
+      if (document.getElementById('dual-video-legacy-style')) {
+        return;
+      }
       const style = document.createElement('style');
+      style.id = 'dual-video-legacy-style';
       style.textContent = `
         #primary-container {
           width: 100%;
@@ -71,7 +306,8 @@ describe('Functional Tests', () => {
           background-color: rgba(33, 33, 33, .75);
           padding: 24px;
         }
-        video {
+        #primary-container video,
+        #secondary-container video {
           width: 100%;
           height: 100%;
         }
@@ -82,12 +318,11 @@ describe('Functional Tests', () => {
           margin: 24px;
           vertical-align: middle;
         }
-        `;
+      `;
       document.head.appendChild(style);
     }
 
-
-    async function addPrimaryDrmVideo(resolve: () => void) {
+    async function addPrimaryDrmVideo(resolve: () => void): Promise<void> {
       const primaryVideoContainer = document.createElement('div');
       primaryVideoContainer.id = 'primary-container';
       document.body.appendChild(primaryVideoContainer);
@@ -98,44 +333,38 @@ describe('Functional Tests', () => {
       primaryVideo.id = 'primary-video';
       util.listenForErrors(primaryVideo, 'primaryVideo', true);
 
-      let videoName;
-      let videoContentType;
+      let primaryStream: StreamDef;
       let licenseServerUrl: string;
       if (!util.supportsAV1()) {
-        videoName = 'drml3NoHdcp_h264_720p_60fps_cenc.mp4';
-        videoContentType = 'video/mp4; codecs="avc1.640028"';
+        primaryStream = H264['DrmL3NoHDCP720p60fpsCenc'];
         licenseServerUrl = H264_LICENSE_URL;
       } else if (util.isGreaterThan8K()) {
-        videoName = 'av1-senc/sdr_4320p30.mp4';
-        videoContentType = 'video/mp4; codecs="av01.0.16M.08"';
+        primaryStream = AV1['SencSdr4320p30'];
         licenseServerUrl = AV1_LICENSE_URL;
       } else if (util.isGreaterThan4K()) {
-        videoName = 'av1-senc/sdr_2160p30.mp4';
-        videoContentType = 'video/mp4; codecs="av01.0.12M.08"';
+        primaryStream = AV1['SencSdr2160p30'];
         licenseServerUrl = AV1_LICENSE_URL;
       } else if (util.isGreaterThanFHDAndSmallerThanOrEqualTo4K()) {
-        videoName = 'av1-senc/sdr_1080p30.mp4';
-        videoContentType = 'video/mp4; codecs="av01.0.08M.08"';
+        primaryStream = AV1['SencSdr1080p30'];
         licenseServerUrl = AV1_LICENSE_URL;
       } else {
-        videoName = 'av1-senc/sdr_720p30.mp4';
-        videoContentType = 'video/mp4; codecs="av01.0.05M.08"';
+        primaryStream = AV1['SencSdr720p30'];
         licenseServerUrl = AV1_LICENSE_URL;
       }
 
       const contentInfo = [
         {
-          mimetype: videoContentType,
-          src: `https://storage.googleapis.com/ytlr-cert.appspot.com/test-materials/media/${videoName}`,
+          mimetype: primaryStream.mimetype,
+          src: primaryStream.src,
         },
       ];
       const mediaKeySystemAccess = await navigator.requestMediaKeySystemAccess(
         'com.widevine.alpha',
         [
           {
-            'initDataTypes': ['cenc'],
-            'videoCapabilities': [
-              {'contentType': videoContentType, 'encryptionScheme': 'cenc'},
+            initDataTypes: ['cenc'],
+            videoCapabilities: [
+              {contentType: primaryStream.mimetype, encryptionScheme: 'cenc'},
             ],
           },
         ],
@@ -165,14 +394,12 @@ describe('Functional Tests', () => {
         );
       });
 
-      primaryVideo.addEventListener('timeupdate', (e) => {
+      primaryVideo.addEventListener('timeupdate', () => {
         if (primaryVideo.currentTime < PRIMARY_DRM_VIDEO_START_TIME) {
-          // Skip first 5 seconds for primary DRM video
           primaryVideo.currentTime = PRIMARY_DRM_VIDEO_START_TIME;
+          const curTime = primaryVideo.currentTime.toFixed(4);
           console.log(
-            `primaryVideo started playing at currentTime = ${primaryVideo.currentTime.toFixed(
-              4,
-            )}`,
+            `primaryVideo started playing at currentTime = ${curTime}`,
           );
         }
 
@@ -182,10 +409,9 @@ describe('Functional Tests', () => {
             PRIMARY_DRM_VIDEO_START_TIME + PRE_MEASUREMENT_THRESHOLD
         ) {
           primaryVideoSnapshot = util.takeVideoTimeSnapshot(primaryVideo);
+          const curTime = primaryVideo.currentTime.toFixed(4);
           console.log(
-            `primaryVideo measurement started at currentTime = ${primaryVideo.currentTime.toFixed(
-              4,
-            )}`,
+            `primaryVideo measurement started at currentTime = ${curTime}`,
           );
           return;
         }
@@ -211,12 +437,16 @@ describe('Functional Tests', () => {
         }
       });
 
-      primaryVideo.src = createMediaSourceUrl(contentInfo);
+      primaryVideo.src = createMediaSourceUrl(contentInfo, {
+        disableTunnel: true,
+      });
       primaryVideo.load();
       await primaryVideo.play();
     }
 
-    async function addSecondaryDrmH264Video(resolve: () => void) {
+    async function addSecondaryDrmH264Video(
+      resolve: () => void,
+    ): Promise<void> {
       const secondaryVideoContainer = document.createElement('div');
       secondaryVideoContainer.id = 'secondary-container';
       document.body.appendChild(secondaryVideoContainer);
@@ -227,6 +457,8 @@ describe('Functional Tests', () => {
         '#0F9D58',
         '#F4B400',
       ];
+      const secondaryStream = H264['DrmL3NoHDCP480p30fpsCenc'];
+
       for (const [index, color] of backGroundColors.entries()) {
         const item = document.createElement('div');
         secondaryVideoContainer.appendChild(item);
@@ -239,18 +471,14 @@ describe('Functional Tests', () => {
           item.appendChild(secondaryVideo);
           secondaryVideo.id = 'secondary-video';
           util.listenForErrors(secondaryVideo, 'secondaryVideo', true);
+
           // Max video capabilities must be set before src.
-          if (
-            secondaryVideo.setMaxVideoCapabilities &&
-            typeof secondaryVideo.setMaxVideoCapabilities === 'function'
-          ) {
+          if (typeof secondaryVideo.setMaxVideoCapabilities === 'function') {
             console.log('set Max Video Capabilities');
             secondaryVideo.setMaxVideoCapabilities(
               'width=854; height=480; framerate=30;',
             );
           }
-
-          const videoContentType = 'video/mp4; codecs="avc1.640028"';
 
           let mediaKeySystemAccess: MediaKeySystemAccess;
           try {
@@ -258,28 +486,27 @@ describe('Functional Tests', () => {
               'com.youtube.widevine.l3',
               [
                 {
-                  'initDataTypes': ['cenc'],
-                  'videoCapabilities': [
+                  initDataTypes: ['cenc'],
+                  videoCapabilities: [
                     {
-                      'contentType': videoContentType,
-                      'encryptionScheme': 'cenc',
+                      contentType: secondaryStream.mimetype,
+                      encryptionScheme: 'cenc',
                     },
                   ],
                 },
               ],
             );
-          } catch (e) {
+          } catch {
             console.log('requestMediaKeySystemAccess l3 failed');
-            // Retrying with L1
             mediaKeySystemAccess = await navigator.requestMediaKeySystemAccess(
               'com.widevine.alpha',
               [
                 {
-                  'initDataTypes': ['cenc'],
-                  'videoCapabilities': [
+                  initDataTypes: ['cenc'],
+                  videoCapabilities: [
                     {
-                      'contentType': videoContentType,
-                      'encryptionScheme': 'cenc',
+                      contentType: secondaryStream.mimetype,
+                      encryptionScheme: 'cenc',
                     },
                   ],
                 },
@@ -294,8 +521,7 @@ describe('Functional Tests', () => {
           mediaKeySession.addEventListener('message', (messageEvent) => {
             const message = messageEvent.message;
             const messageType = messageEvent.messageType;
-            const keySession: MediaKeySession =
-              messageEvent.target as MediaKeySession;
+            const keySession = messageEvent.target as MediaKeySession;
             const updateSession = (response: Uint8Array) => {
               setTimeout(() => {
                 keySession.update(response.buffer).catch(() => {
@@ -306,8 +532,10 @@ describe('Functional Tests', () => {
             if (messageType === 'individualization-request') {
               requestIndividualization(message, updateSession);
             } else if (messageType === 'license-request') {
-              const licenseServerUrl =
-                'https://dash-mse-test.appspot.com/api/drm/widevine?drm_system=widevine&source=YOUTUBE&ip=0.0.0.0&ipbits=0&expire=19000000000&key=test_key1&sparams=ip,ipbits,expire,drm_system,source,video_id&video_id=f320151fa3f061b2&signature=81E7B33929F9F35922F7D2E96A5E7AC36F3218B2.673F553EE51A48438AE5E707AEC87A071B4FEF65';
+              const licenseServerUrl = getLicenseServerUrl(
+                secondaryStream,
+                H264_LICENSE_URL,
+              );
               util.fetchArrayBuffer(
                 'POST',
                 licenseServerUrl,
@@ -322,34 +550,38 @@ describe('Functional Tests', () => {
               console.debug('unknown MediaKeyMessageEvent type');
             }
           });
+
           secondaryVideo.addEventListener('encrypted', (encryptedEvent) => {
             mediaKeySession.generateRequest(
               encryptedEvent.initDataType,
               encryptedEvent.initData as BufferSource,
             );
           });
+
           const mediaSource = new MediaSource();
           mediaSource.addEventListener('sourceopen', () => {
-            const videoSourceBuffer =
-              mediaSource.addSourceBuffer(util.getMimeTypeWithTunnelMode(videoContentType));
+            const videoSourceBuffer = mediaSource.addSourceBuffer(
+              util.getMimeTypeWithTunnelMode(secondaryStream.mimetype, {
+                disableTunnel: true,
+              }),
+            );
             util.fetchArrayBuffer(
               'GET',
-              'https://storage.googleapis.com/ytlr-cert.appspot.com/test-materials/media/drml3NoHdcp_h264_480p_30fps_cenc.mp4',
+              secondaryStream.src,
               null,
               (videoArrayBuffer) => {
                 videoSourceBuffer.appendBuffer(videoArrayBuffer);
               },
             );
           });
-          secondaryVideo.addEventListener('timeupdate', (e) => {
+
+          secondaryVideo.addEventListener('timeupdate', () => {
             if (secondaryVideo.currentTime < SECONDARY_DRM_VIDEO_START_TIME) {
               secondaryVideoStarted = true;
-              // Skip first 10 seconds for secondary DRM
               secondaryVideo.currentTime = SECONDARY_DRM_VIDEO_START_TIME;
+              const curTime = secondaryVideo.currentTime.toFixed(4);
               console.log(
-                `secondaryVideo started playing at currentTime = ${secondaryVideo.currentTime.toFixed(
-                  4,
-                )}`,
+                `secondaryVideo started playing at currentTime = ${curTime}`,
               );
               return;
             }
@@ -361,10 +593,10 @@ describe('Functional Tests', () => {
             ) {
               secondaryVideoSnapshot =
                 util.takeVideoTimeSnapshot(secondaryVideo);
+              const curTime = secondaryVideo.currentTime.toFixed(4);
               console.log(
-                `secondaryVideo measurement started at currentTime = ${secondaryVideo.currentTime.toFixed(
-                  4,
-                )}`,
+                'secondaryVideo measurement started at currentTime = ' +
+                  curTime,
               );
               return;
             }
@@ -399,18 +631,6 @@ describe('Functional Tests', () => {
       }
     }
 
-    function cleanUpVideoAndContainer(videoId: string, containerId: string) {
-      const video = document.getElementById(videoId);
-      if (video) {
-        util.removeCobaltVideo(video as HTMLVideoElement);
-      }
-
-      const container = document.getElementById(containerId);
-      if (container) {
-        document.body.removeChild(container);
-      }
-    }
-
     yts.test({id: 'E085E041-D65D-40F7-A4B8-2224B321B891'});
     it(
       'Dual Drm Video Test',
@@ -427,7 +647,7 @@ describe('Functional Tests', () => {
           async (resolve, reject) => {
             await addPrimaryDrmVideo(resolve);
             await util.sleep(VIDEO_TIMEOUT_THRESHOLD * util.SECOND);
-            reject('primaryVideo'.concat(rejectReason));
+            reject(new Error(`primaryVideo${rejectReason}`));
           },
         );
 
@@ -435,7 +655,7 @@ describe('Functional Tests', () => {
           async (resolve, reject) => {
             await addSecondaryDrmH264Video(resolve);
             await util.sleep(VIDEO_TIMEOUT_THRESHOLD * util.SECOND);
-            reject('secondaryVideo'.concat(rejectReason));
+            reject(new Error(`secondaryVideo${rejectReason}`));
           },
         );
 
@@ -444,381 +664,21 @@ describe('Functional Tests', () => {
         } finally {
           cleanUpVideoAndContainer('primary-video', 'primary-container');
           cleanUpVideoAndContainer('secondary-video', 'secondary-container');
+          cleanUpDualVideoStyle();
         }
       },
       TEST_TIMEOUT * util.SECOND,
     );
 
-    const PRIMARY_DRM_VIDEO_START_TIME_2027 = 2;
-    const SECONDARY_DRM_VIDEO_START_TIME_2027 = 10;
-    const TEST_DONE_THRESHOLD_2027 = 17;
-
-
-
-    async function addPrimaryDrmVideo2027(resolve: () => void) {
-      const primaryVideoContainer = document.createElement('div');
-      primaryVideoContainer.id = 'primary-container';
-      document.body.appendChild(primaryVideoContainer);
-      const primaryVideo = document.createElement(
-        'video',
-      ) as CobaltVideoElement;
-      primaryVideoContainer.appendChild(primaryVideo);
-      primaryVideo.id = 'primary-video';
-      util.listenForErrors(primaryVideo, 'primaryVideo', true);
-
-      let primaryStream = AV1['SencSdr720p30']; // Default fallback
-
-      if (util.isGreaterThan8K()) {
-        primaryStream = AV1['SencSdr2160p30'];
-      } else if (util.isGreaterThan4K()) {
-        primaryStream = AV1['SencSdr2160p30'];
-      } else if (util.isGreaterThanFHDAndSmallerThanOrEqualTo4K()) {
-        primaryStream = AV1['SencSdr1080p60'];
-      } else {
-        if (MediaSource.isTypeSupported(AV1['SencSdr1080p30'].mimetype)) {
-          primaryStream = AV1['SencSdr1080p30'];
-        } else {
-          primaryStream = AV1['SencSdr720p30'];
-        }
-      }
-
-      console.log(`Primary video selected: ${primaryStream.src} (${primaryStream.mimetype})`);
-
-      const mediaKeySystemAccess = await navigator.requestMediaKeySystemAccess(
-        'com.widevine.alpha',
-        [
-          {
-            'initDataTypes': ['cenc'],
-            'videoCapabilities': [
-              {
-                'contentType': primaryStream.mimetype,
-                'encryptionScheme': 'cenc',
-              },
-            ],
-          },
-        ],
-      );
-
-      const mediaKeys = await mediaKeySystemAccess.createMediaKeys();
-      await primaryVideo.setMediaKeys(mediaKeys);
-
-      const mediaKeySession = mediaKeys.createSession();
-      mediaKeySession.addEventListener('message', (messageEvent) => {
-        util.fetchArrayBuffer(
-          'POST',
-          AV1_LICENSE_URL,
-          messageEvent.message,
-          (licenseArrayBuffer) => {
-            mediaKeySession.update(
-              util.extractLicenseCallback(licenseArrayBuffer),
-            );
-          },
-        );
-      });
-
-      primaryVideo.addEventListener('encrypted', (encryptedEvent) => {
-        mediaKeySession.generateRequest(
-          encryptedEvent.initDataType,
-          encryptedEvent.initData as ArrayBuffer,
-        );
-      });
-
-      primaryVideo.addEventListener('timeupdate', (e) => {
-        if (primaryVideo.currentTime < PRIMARY_DRM_VIDEO_START_TIME_2027) {
-          primaryVideo.currentTime = PRIMARY_DRM_VIDEO_START_TIME_2027;
-          console.log(
-            `primaryVideo started playing at currentTime = ${primaryVideo.currentTime.toFixed(
-              4,
-            )}`,
-          );
-        }
-
-        if (
-          !primaryVideoSnapshot.initialized &&
-          primaryVideo.currentTime >
-            PRIMARY_DRM_VIDEO_START_TIME_2027 + PRE_MEASUREMENT_THRESHOLD
-        ) {
-          primaryVideoSnapshot = util.takeVideoTimeSnapshot(primaryVideo);
-          console.log(
-            `primaryVideo measurement started at currentTime = ${primaryVideo.currentTime.toFixed(
-              4,
-            )}`,
-          );
-          return;
-        }
-
-        if (
-          primaryVideoSnapshot.initialized &&
-          primaryVideo.currentTime - primaryVideoSnapshot.videoCurrentTime >
-            MEASUREMENT_THRESHOLD
-        ) {
-          primaryVideoSnapshot = util.validateVideoCurrentTimeAgainstSnapshot(
-            primaryVideo,
-            primaryVideoSnapshot,
-            ERROR_MARGIN_PERCENT,
-            'primaryVideo',
-          );
-        }
-
-        if (
-          primaryVideo.currentTime > TEST_DONE_THRESHOLD_2027 &&
-          secondaryVideoStarted
-        ) {
-          resolve();
-        }
-      });
-
-      const contentInfo = [
-        {
-          mimetype: primaryStream.mimetype,
-          src: primaryStream.src,
+    for (const testCase of getDualVideo2027TestCases()) {
+      yts.test({id: testCase.id});
+      it(
+        testCase.title,
+        async () => {
+          await runDualVideoTest2027(testCase.primary, testCase.secondary);
         },
-      ];
-      primaryVideo.src = createMediaSourceUrl(contentInfo);
-      primaryVideo.load();
-      await primaryVideo.play();
+        TEST_TIMEOUT * util.SECOND,
+      );
     }
-
-    async function addSecondaryDrmVideo2027(resolve: () => void) {
-      const secondaryVideoContainer = document.createElement('div');
-      secondaryVideoContainer.id = 'secondary-container';
-      document.body.appendChild(secondaryVideoContainer);
-      const backGroundColors = [
-        '#DB4437',
-        '#9E9E9E',
-        '#4285F4',
-        '#0F9D58',
-        '#F4B400',
-      ];
-      const index = 1;
-      const color = backGroundColors[index];
-      const item = document.createElement('div');
-      secondaryVideoContainer.appendChild(item);
-      item.classList.add('item');
-      item.style.backgroundColor = color;
-      const secondaryVideo = document.createElement(
-        'video',
-      ) as CobaltVideoElement;
-      item.appendChild(secondaryVideo);
-      secondaryVideo.id = 'secondary-video';
-      util.listenForErrors(secondaryVideo, 'secondaryVideo', true);
-
-      let secondaryStream: StreamDef;
-      let requireHwDrm = false;
-
-      if (util.isGreaterThan4K() || util.isGreaterThan8K() || util.isGreaterThanFHDAndSmallerThanOrEqualTo4K()) {
-        requireHwDrm = true;
-        if (util.supportsAV1() && MediaSource.isTypeSupported(AV1['SencSdr720p30'].mimetype)) {
-          secondaryStream = AV1['SencSdr720p30'];
-        } else {
-          secondaryStream = VP9['DrmL3NoHDCP720p30fpsEnc'];
-        }
-      } else {
-        if (util.supportsAV1() && MediaSource.isTypeSupported(AV1['SencSdr480p30'].mimetype)) {
-          secondaryStream = AV1['SencSdr480p30'];
-        } else {
-          secondaryStream = VP9['DrmL3NoHDCP480p30fpsEnc'];
-        }
-      }
-
-      console.log(`Secondary video selected: ${secondaryStream.src} (${secondaryStream.mimetype}), requireHwDrm: ${requireHwDrm}`);
-
-      if (
-        secondaryVideo.setMaxVideoCapabilities &&
-        typeof secondaryVideo.setMaxVideoCapabilities === 'function'
-      ) {
-        console.log('set Max Video Capabilities');
-        const width = (secondaryStream.get('width') as number) || 1280;
-        const height = (secondaryStream.get('height') as number) || 720;
-        const fps = (secondaryStream.get('fps') as number) || 30;
-        secondaryVideo.setMaxVideoCapabilities(
-          `width=${width}; height=${height}; framerate=${fps};`,
-        );
-      }
-
-      let mediaKeySystemAccess: MediaKeySystemAccess | undefined = undefined;
-      const keySystems = requireHwDrm ?
-          ['com.widevine.alpha'] :
-          ['com.youtube.widevine.l3', 'com.widevine.alpha'];
-      let selectedKeySystem = '';
-      for (const keySystem of keySystems) {
-        try {
-          mediaKeySystemAccess = await navigator.requestMediaKeySystemAccess(
-            keySystem,
-            [
-              {
-                'initDataTypes': ['cenc'],
-                'videoCapabilities': [
-                  {
-                    'contentType': secondaryStream.mimetype,
-                    'encryptionScheme': 'cenc',
-                  },
-                ],
-              },
-            ],
-          );
-          selectedKeySystem = keySystem;
-          break;
-        } catch (e) {
-          console.log(`requestMediaKeySystemAccess for ${keySystem} failed`);
-        }
-      }
-
-      if (!mediaKeySystemAccess) {
-        throw new Error('Failed to request MediaKeySystemAccess for secondary video');
-      }
-      console.log(`Selected key system for secondary: ${selectedKeySystem}`);
-
-      const mediaKeys = await mediaKeySystemAccess.createMediaKeys();
-      await secondaryVideo.setMediaKeys(mediaKeys);
-      const mediaKeySession = mediaKeys.createSession();
-
-      mediaKeySession.addEventListener('message', (messageEvent) => {
-        const message = messageEvent.message;
-        const messageType = messageEvent.messageType;
-        const keySession: MediaKeySession =
-          messageEvent.target as MediaKeySession;
-        const updateSession = (response: Uint8Array) => {
-          setTimeout(() => {
-            keySession.update(response.buffer).catch(() => {
-              console.log('keySession.update failed');
-            });
-          }, LICENSE_DELAY_MS);
-        };
-        if (messageType === 'individualization-request') {
-          requestIndividualization(message, updateSession);
-        } else if (messageType === 'license-request') {
-          const videoId = secondaryStream.get('video_id') as string;
-          const signature = secondaryStream.get('widevine_signature') as string;
-          const key = (secondaryStream.get('key') as string) || 'test_key1';
-          const licenseServerUrl = `https://dash-mse-test.appspot.com/api/drm/widevine?drm_system=widevine&source=YOUTUBE&ip=0.0.0.0&ipbits=0&expire=19000000000&key=${key}&sparams=ip,ipbits,expire,drm_system,source,video_id&video_id=${videoId}&signature=${signature}`;
-
-          util.fetchArrayBuffer(
-            'POST',
-            licenseServerUrl,
-            messageEvent.message,
-            (licenseArrayBuffer) => {
-              mediaKeySession.update(
-                util.extractLicenseCallback(licenseArrayBuffer),
-              );
-            },
-          );
-        } else {
-          console.debug('unknown MediaKeyMessageEvent type');
-        }
-      });
-
-      secondaryVideo.addEventListener('encrypted', (encryptedEvent) => {
-        mediaKeySession.generateRequest(
-          encryptedEvent.initDataType,
-          encryptedEvent.initData as BufferSource,
-        );
-      });
-
-      const mediaSource = new MediaSource();
-      mediaSource.addEventListener('sourceopen', () => {
-        const videoSourceBuffer =
-          mediaSource.addSourceBuffer(util.getMimeTypeWithTunnelMode(secondaryStream.mimetype));
-        util.fetchArrayBuffer(
-          'GET',
-          secondaryStream.src,
-          null,
-          (videoArrayBuffer) => {
-            videoSourceBuffer.appendBuffer(videoArrayBuffer);
-          },
-        );
-      });
-
-      secondaryVideo.addEventListener('timeupdate', (e) => {
-        if (secondaryVideo.currentTime < SECONDARY_DRM_VIDEO_START_TIME_2027) {
-          secondaryVideoStarted = true;
-          secondaryVideo.currentTime = SECONDARY_DRM_VIDEO_START_TIME_2027;
-          console.log(
-            `secondaryVideo started playing at currentTime = ${secondaryVideo.currentTime.toFixed(
-              4,
-            )}`,
-          );
-          return;
-        }
-
-        if (
-          !secondaryVideoSnapshot.initialized &&
-          secondaryVideo.currentTime >
-            SECONDARY_DRM_VIDEO_START_TIME_2027 + PRE_MEASUREMENT_THRESHOLD
-        ) {
-          secondaryVideoSnapshot =
-            util.takeVideoTimeSnapshot(secondaryVideo);
-          console.log(
-            `secondaryVideo measurement started at currentTime = ${secondaryVideo.currentTime.toFixed(
-              4,
-            )}`,
-          );
-          return;
-        }
-
-        if (
-          secondaryVideoSnapshot.initialized &&
-          secondaryVideo.currentTime -
-            secondaryVideoSnapshot.videoCurrentTime >
-            MEASUREMENT_THRESHOLD
-        ) {
-          secondaryVideoSnapshot =
-            util.validateVideoCurrentTimeAgainstSnapshot(
-              secondaryVideo,
-              secondaryVideoSnapshot,
-              ERROR_MARGIN_PERCENT,
-              'secondaryVideo',
-            );
-        }
-
-        if (
-          secondaryVideo.currentTime > TEST_DONE_THRESHOLD_2027
-        ) {
-          resolve();
-        }
-      });
-
-      secondaryVideo.src = util.createMediaSourceUrlFromSource(mediaSource);
-      secondaryVideo.load();
-      await secondaryVideo.play();
-    }
-
-    yts.test({id: '5F139C7F-C7DE-4920-AEC3-92F812F0994C'});
-    it(
-      'Dual Drm Video Test 2027',
-      async () => {
-        initializeStyle();
-
-        const rejectReason =
-          ' currentTime did not reach the expected value before end of test. ' +
-          'This could be because the video took too long to start playing ' +
-          'or because the video erroneously paused / stalled in the middle.';
-
-        console.log('Rendering dual videos (2027).');
-        const primaryVideoPromise = new Promise<void>(
-          async (resolve, reject) => {
-            await addPrimaryDrmVideo2027(resolve);
-            await util.sleep(VIDEO_TIMEOUT_THRESHOLD * util.SECOND);
-            reject('primaryVideo'.concat(rejectReason));
-          },
-        );
-
-        const secondVideoPromise = new Promise<void>(
-          async (resolve, reject) => {
-            await addSecondaryDrmVideo2027(resolve);
-            await util.sleep(VIDEO_TIMEOUT_THRESHOLD * util.SECOND);
-            reject('secondaryVideo'.concat(rejectReason));
-          },
-        );
-
-        try {
-          await Promise.all([primaryVideoPromise, secondVideoPromise]);
-        } finally {
-          cleanUpVideoAndContainer('primary-video', 'primary-container');
-          cleanUpVideoAndContainer('secondary-video', 'secondary-container');
-        }
-      },
-      TEST_TIMEOUT * util.SECOND,
-    );
   });
 });

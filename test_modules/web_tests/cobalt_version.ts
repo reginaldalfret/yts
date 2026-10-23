@@ -55,12 +55,12 @@ function cobaltVersionTest(majorVersion: number) {
     console.log(
       `Cobalt version on this device: ${cobaltVersionStr}. Minor version: ${actualMinorStr}.`,
     );
-    if (majorVersion < 27 && actualMinor % 10 !== 0) {
+    if (actualMinor % 10 !== 0) {
       fail(
         `Expected Cobalt minor version on this device (${actualMinorStr}) to be a stable version. Stable versions are a multiple of 10.`,
       );
     }
-    const maxDelta = majorVersion >= 27 ? 2 : 20;
+    const maxDelta = 20;
     if (latestMinor - actualMinor <= maxDelta) {
       console.log(
         `Cobalt minor version on this device (${actualMinorStr}) is correctly no older than ${maxDelta} minor versions behind latest (${latestMinorStr}).`,

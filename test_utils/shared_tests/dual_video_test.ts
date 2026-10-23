@@ -168,7 +168,9 @@ async function addPrimaryVideo(shouldPause: boolean, resolve?: () => void) {
     }
   });
 
-  primaryVideo.src = createMediaSourceUrl(contentInfo);
+  primaryVideo.src = createMediaSourceUrl(contentInfo, {
+    disableTunnel: true,
+  });
   primaryVideo.autoplay = true;
   await primaryVideo.play();
 }
@@ -219,9 +221,10 @@ async function addSecondaryVideo(resolve?: () => void) {
       secondaryVideo.loop = true;
       secondaryVideo.autoplay = true;
       secondaryVideo.muted = true;
-      secondaryVideo.src = util.createMediaSourceUrl([
-        SECONDARY_VIDEO_CONTENT_INFO,
-      ]);
+      secondaryVideo.src = util.createMediaSourceUrl(
+        [SECONDARY_VIDEO_CONTENT_INFO],
+        {disableTunnel: true},
+      );
     }
   }
 }
